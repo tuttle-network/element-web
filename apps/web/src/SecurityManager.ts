@@ -111,6 +111,8 @@ async function getSecretStorageKey(
 
     logger.debug(`getSecretStorageKey: prompting user for key ${keyId}`);
     const inputToKey = makeInputToKey(keyInfo);
+    // Priority so the prompt is above Complete Security / other static dialogs.
+    // Otherwise the click on "Use recovery key" looks like a no-op.
     const { finished } = Modal.createDialog(
         AccessSecretStorageDialog,
         /* props= */
@@ -121,6 +123,8 @@ async function getSecretStorageKey(
                 return MatrixClientPeg.safeGet().secretStorage.checkKey(key, keyInfo);
             },
         },
+        undefined,
+        /* isPriorityModal = */ true,
     );
     const [keyParams] = await finished;
     if (!keyParams) {
@@ -244,11 +248,16 @@ async function doAccessSecretStorage(func: () => Promise<void>, opts: AccessSecr
             await crypto.bootstrapCrossSigning({
                 authUploadDeviceSigningKeys: async (makeRequest): Promise<void> => {
                     logger.debug("accessSecretStorage: performing UIA to upload cross-signing keys");
-                    const { finished } = Modal.createDialog(InteractiveAuthDialog, {
-                        title: _t("encryption|bootstrap_title"),
-                        matrixClient: cli,
-                        makeRequest,
-                    });
+                    const { finished } = Modal.createDialog(
+                        InteractiveAuthDialog,
+                        {
+                            title: _t("encryption|bootstrap_title"),
+                            matrixClient: cli,
+                            makeRequest,
+                        },
+                        undefined,
+                        /* isPriorityModal = */ true,
+                    );
                     const [confirmed] = await finished;
                     if (!confirmed) {
                         throw new Error("Cross-signing key upload auth canceled");

@@ -114,8 +114,8 @@ export class SetupEncryptionStore extends EventEmitter {
 
     public async usePassPhrase(): Promise<void> {
         logger.debug("SetupEncryptionStore.usePassphrase");
-        this.phase = Phase.Busy;
-        this.emit("update");
+        // Do not switch to Busy before the recovery-key dialog is shown: Busy
+        // unmounts the Intro buttons, so a hidden/failed dialog looks like a no-op.
         try {
             const cli = MatrixClientPeg.safeGet();
             const backupInfo = (await cli.getCrypto()?.getKeyBackupInfo()) ?? null;
