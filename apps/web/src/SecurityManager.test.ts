@@ -92,6 +92,28 @@ describe("SecurityManager", () => {
             });
         });
 
+        it("repairs a missing default 4S key when CS master is already stored", async () => {
+            const crypto = {
+                bootstrapCrossSigning: vi.fn(),
+                bootstrapSecretStorage: vi.fn(),
+            } as unknown as CryptoApi;
+            const client = stubClient();
+            vi.mocked(client.getCrypto).mockReturnValue(crypto);
+            client.secretStorage.hasKey = vi
+                .fn()
+                .mockResolvedValueOnce(false)
+                .mockResolvedValue(true);
+            client.secretStorage.isStored = vi.fn().mockResolvedValue({ existing_key: {} });
+            client.secretStorage.setDefaultKeyId = vi.fn().mockResolvedValue(undefined);
+
+            const func = vi.fn();
+            await accessSecretStorage(func);
+
+            expect(client.secretStorage.setDefaultKeyId).toHaveBeenCalledWith("existing_key");
+            expect(crypto.bootstrapCrossSigning).toHaveBeenCalled();
+            expect(func).toHaveBeenCalledTimes(1);
+        });
+
         it("should show CreateSecretStorageDialog if forceReset=true", async () => {
             const spy = vi.spyOn(Modal, "createDialog").mockReturnValue({
                 finished: Promise.resolve([true]),
@@ -141,20 +163,28 @@ describe("SecurityManager", () => {
             expect(key).toEqual(recoveryKey);
         });
 
-        it("should not prompt the user if the requested key is not the default", async () => {
+        it("should prompt the user if the requested key is not the default", async () => {
+            polyFillSubtleCrypto();
+
             const client = stubClient();
             vi.mocked(client.secretStorage.getDefaultKeyId).mockResolvedValue("my_default_key");
-            const createDialogSpy = vi.spyOn(Modal, "createDialog");
 
-            await expect(
-                act(() =>
-                    getSecretStorageKey!(
-                        { keys: { other_key: {} as SecretStorage.SecretStorageKeyDescription } },
-                        "my_secret",
-                    ),
-                ),
-            ).rejects.toThrow("Request for non-default 4S key");
-            expect(createDialogSpy).not.toHaveBeenCalled();
+            const passphrase = "s3cret";
+            const { recoveryKey, keyInfo } = await deriveKeyFromPassphrase(passphrase);
+
+            vi.spyOn(Modal, "createDialog").mockImplementation((component) => {
+                expect(component).toBe(AccessSecretStorageDialog);
+                return {
+                    finished: Promise.resolve([{ passphrase }] as [KeyParams]),
+                    close: () => {},
+                };
+            });
+
+            const [keyId, key] = (await act(() =>
+                getSecretStorageKey!({ keys: { other_key: keyInfo } }, "my_secret"),
+            ))!;
+            expect(keyId).toEqual("other_key");
+            expect(key).toEqual(recoveryKey);
         });
     });
 });

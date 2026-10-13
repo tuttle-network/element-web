@@ -235,6 +235,31 @@ export async function accessSecretStorage(
     await withSecretStorageKeyCache(() => doAccessSecretStorage(func, opts));
 }
 
+/**
+ * If `m.secret_storage.default_key` is missing but a 4S key already encrypts
+ * `m.cross_signing.master`, point the default at that key. Otherwise
+ * `hasKey()` is false, "Use recovery key" accepts a valid key, then
+ * `accessSecretStorage` aborts with "Secret storage has not been created yet."
+ */
+async function repairDefaultSecretStorageKey(): Promise<void> {
+    const cli = MatrixClientPeg.safeGet();
+    const stored = await cli.secretStorage.isStored("m.cross_signing.master");
+    if (!stored || typeof stored !== "object") {
+        return;
+    }
+    const keyIds = Object.keys(stored);
+    if (keyIds.length === 0) {
+        return;
+    }
+    const keyId = keyIds[0];
+    logger.debug(
+        `accessSecretStorage: no default 4S key; setting default to ${keyId} (holds m.cross_signing.master)`,
+    );
+    if (typeof cli.secretStorage.setDefaultKeyId === "function") {
+        await cli.secretStorage.setDefaultKeyId(keyId);
+    }
+}
+
 /** Helper for {@link #accessSecretStorage} */
 async function doAccessSecretStorage(func: () => Promise<void>, opts: AccessSecretStorageOpts): Promise<void> {
     try {
@@ -259,10 +284,15 @@ async function doAccessSecretStorage(func: () => Promise<void>, opts: AccessSecr
             if (!confirmed) {
                 throw new Error("Secret storage creation canceled");
             }
-        } else if (!(await cli.secretStorage.hasKey())) {
-            logger.debug("accessSecretStorage: no 4S key configured");
-            throw new Error("Secret storage has not been created yet.");
         } else {
+            if (!(await cli.secretStorage.hasKey())) {
+                await repairDefaultSecretStorageKey();
+            }
+            if (!(await cli.secretStorage.hasKey()) && !forcedSecretStorageKey) {
+                logger.debug("accessSecretStorage: no 4S key configured");
+                throw new Error("Secret storage has not been created yet.");
+            }
+
             logger.debug("accessSecretStorage: bootstrapCrossSigning");
             await crypto.bootstrapCrossSigning({
                 authUploadDeviceSigningKeys: async (makeRequest): Promise<void> => {
