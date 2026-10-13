@@ -48,7 +48,7 @@ export class AccessCancelledError extends Error {
     }
 }
 
-function makeInputToKey(
+export function makeInputToKey(
     keyInfo: SecretStorage.SecretStorageKeyDescription,
 ): (keyParams: KeyParams) => Promise<Uint8Array<ArrayBuffer>> {
     return async ({ passphrase, recoveryKey }): Promise<Uint8Array<ArrayBuffer>> => {
@@ -59,6 +59,16 @@ function makeInputToKey(
         }
         throw new Error("Invalid input, passphrase or recoveryKey need to be provided");
     };
+}
+
+/**
+ * Preload a 4S key so the next {@link accessSecretStorage} does not prompt.
+ * Used when the recovery-key form is shown inline (Complete Security / verify session).
+ */
+let forcedSecretStorageKey: Uint8Array<ArrayBuffer> | null = null;
+
+export function setForcedSecretStorageKey(key: Uint8Array<ArrayBuffer> | null): void {
+    forcedSecretStorageKey = key;
 }
 
 async function getSecretStorageKey(
@@ -96,6 +106,12 @@ async function getSecretStorageKey(
         return [keyId, secretStorageKeys[keyId]];
     }
 
+    if (forcedSecretStorageKey) {
+        logger.debug(`getSecretStorageKey: using preloaded recovery key for ${keyId}`);
+        cacheSecretStorageKey(keyId, keyInfo, forcedSecretStorageKey);
+        return [keyId, forcedSecretStorageKey];
+    }
+
     const keyFromCustomisations = ModuleRunner.instance.extensions.cryptoSetup.getSecretStorageKey();
     if (keyFromCustomisations) {
         logger.debug("getSecretStorageKey: Using secret storage key from CryptoSetupExtension");
@@ -103,14 +119,19 @@ async function getSecretStorageKey(
         return [keyId, keyFromCustomisations];
     }
 
-    // We only prompt the user for the default key
+    // Prompt for whichever key can decrypt the secret — including when
+    // m.secret_storage.default_key is missing or points elsewhere. Throwing
+    // here made "Use recovery key" a silent no-op (the button is shown as soon
+    // as *any* 4S key holds m.cross_signing.master).
     if (keyId !== defaultKeyId) {
-        logger.debug(`getSecretStorageKey: request for non-default key ${keyId}: not prompting user`);
-        throw new Error("Request for non-default 4S key");
+        logger.debug(
+            `getSecretStorageKey: key ${keyId} is not the default (${defaultKeyId}): still prompting user`,
+        );
     }
 
     logger.debug(`getSecretStorageKey: prompting user for key ${keyId}`);
     const inputToKey = makeInputToKey(keyInfo);
+    // Priority so the prompt is above static dialogs (verify-session toast).
     const { finished } = Modal.createDialog(
         AccessSecretStorageDialog,
         /* props= */
@@ -121,6 +142,8 @@ async function getSecretStorageKey(
                 return MatrixClientPeg.safeGet().secretStorage.checkKey(key, keyInfo);
             },
         },
+        "mx_Dialog_recoveryKey",
+        /* isPriorityModal = */ true,
     );
     const [keyParams] = await finished;
     if (!keyParams) {
@@ -212,6 +235,31 @@ export async function accessSecretStorage(
     await withSecretStorageKeyCache(() => doAccessSecretStorage(func, opts));
 }
 
+/**
+ * If `m.secret_storage.default_key` is missing but a 4S key already encrypts
+ * `m.cross_signing.master`, point the default at that key. Otherwise
+ * `hasKey()` is false, "Use recovery key" accepts a valid key, then
+ * `accessSecretStorage` aborts with "Secret storage has not been created yet."
+ */
+async function repairDefaultSecretStorageKey(): Promise<void> {
+    const cli = MatrixClientPeg.safeGet();
+    const stored = await cli.secretStorage.isStored("m.cross_signing.master");
+    if (!stored || typeof stored !== "object") {
+        return;
+    }
+    const keyIds = Object.keys(stored);
+    if (keyIds.length === 0) {
+        return;
+    }
+    const keyId = keyIds[0];
+    logger.debug(
+        `accessSecretStorage: no default 4S key; setting default to ${keyId} (holds m.cross_signing.master)`,
+    );
+    if (typeof cli.secretStorage.setDefaultKeyId === "function") {
+        await cli.secretStorage.setDefaultKeyId(keyId);
+    }
+}
+
 /** Helper for {@link #accessSecretStorage} */
 async function doAccessSecretStorage(func: () => Promise<void>, opts: AccessSecretStorageOpts): Promise<void> {
     try {
@@ -236,19 +284,29 @@ async function doAccessSecretStorage(func: () => Promise<void>, opts: AccessSecr
             if (!confirmed) {
                 throw new Error("Secret storage creation canceled");
             }
-        } else if (!(await cli.secretStorage.hasKey())) {
-            logger.debug("accessSecretStorage: no 4S key configured");
-            throw new Error("Secret storage has not been created yet.");
         } else {
+            if (!(await cli.secretStorage.hasKey())) {
+                await repairDefaultSecretStorageKey();
+            }
+            if (!(await cli.secretStorage.hasKey()) && !forcedSecretStorageKey) {
+                logger.debug("accessSecretStorage: no 4S key configured");
+                throw new Error("Secret storage has not been created yet.");
+            }
+
             logger.debug("accessSecretStorage: bootstrapCrossSigning");
             await crypto.bootstrapCrossSigning({
                 authUploadDeviceSigningKeys: async (makeRequest): Promise<void> => {
                     logger.debug("accessSecretStorage: performing UIA to upload cross-signing keys");
-                    const { finished } = Modal.createDialog(InteractiveAuthDialog, {
-                        title: _t("encryption|bootstrap_title"),
-                        matrixClient: cli,
-                        makeRequest,
-                    });
+                    const { finished } = Modal.createDialog(
+                        InteractiveAuthDialog,
+                        {
+                            title: _t("encryption|bootstrap_title"),
+                            matrixClient: cli,
+                            makeRequest,
+                        },
+                        undefined,
+                        /* isPriorityModal = */ true,
+                    );
                     const [confirmed] = await finished;
                     if (!confirmed) {
                         throw new Error("Cross-signing key upload auth canceled");

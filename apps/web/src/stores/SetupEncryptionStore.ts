@@ -22,6 +22,9 @@ import { MatrixClientPeg } from "../MatrixClientPeg";
 import { AccessCancelledError, accessSecretStorage } from "../SecurityManager";
 import { initialiseDehydrationIfEnabled } from "../utils/device/dehydration";
 import { hasOtherVerifiedDevices } from "../hooks/useHasOtherVerifiedDevices";
+import Modal from "../Modal";
+import ErrorDialog from "../components/views/dialogs/ErrorDialog";
+import { _t } from "../languageHandler";
 
 export enum Phase {
     Loading = 0,
@@ -157,6 +160,15 @@ export class SetupEncryptionStore extends EventEmitter {
                 logger.debug("SetupEncryptionStore.usePassphrase: user cancelled access to secret storage");
             } else {
                 logger.log("SetupEncryptionStore.usePassphrase: error", e);
+                Modal.createDialog(
+                    ErrorDialog,
+                    {
+                        title: _t("common|error"),
+                        description: e instanceof Error ? e.message : String(e),
+                    },
+                    undefined,
+                    /* isPriorityModal = */ true,
+                );
             }
 
             this.phase = Phase.Intro;

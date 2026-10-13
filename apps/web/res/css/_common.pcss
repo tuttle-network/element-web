@@ -52,6 +52,21 @@ Please see LICENSE files in the repository root for full details.
     isolation: isolate;
 }
 
+/* isolation:isolate makes inner z-index not compare across containers.
+   position is required for z-index to apply on these otherwise-static divs.
+   Regular dialogs (recovery key, UIA) must paint above static verify-session. */
+#mx_Dialog_StaticContainer {
+    position: relative;
+    z-index: var(--dialog-zIndex-wrapper-default);
+}
+#mx_Dialog_Container {
+    position: relative;
+    z-index: calc(var(--dialog-zIndex-wrapper-default) + 20);
+}
+.mx_Dialog_wrapper.mx_Dialog_recoveryKey {
+    z-index: calc(var(--dialog-zIndex-wrapper-default) + 40);
+}
+
 /**
  * Disable pointer events inside the persistentElement container when the room-list is being resized.
  * This is necessary to avoid the pointer events from being hijacked by the content rendered inside
