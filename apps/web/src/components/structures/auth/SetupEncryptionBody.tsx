@@ -29,6 +29,10 @@ import ExternalLink from "../../views/elements/ExternalLink";
 import dispatcher from "../../../dispatcher/dispatcher";
 import E2EIcon from "../../views/rooms/E2EIcon.tsx";
 import { E2EStatus } from "../../../utils/ShieldUtils.ts";
+import AccessSecretStorageDialog, {
+    type KeyParams,
+} from "../../views/dialogs/security/AccessSecretStorageDialog";
+import { makeInputToKey, setForcedSecretStorageKey } from "../../../SecurityManager";
 
 interface IProps {
     onFinished: () => void;
@@ -48,6 +52,8 @@ interface IState {
     phase?: Phase;
     verificationRequest: VerificationRequest | null;
     backupInfo: KeyBackupInfo | null;
+    /** Show the recovery-key form in this card instead of opening a second modal. */
+    enteringRecoveryKey: boolean;
 }
 
 /**
@@ -65,6 +71,7 @@ export default class SetupEncryptionBody extends React.Component<IProps, IState>
             // Because of the latter, it lives in the state.
             verificationRequest: store.verificationRequest,
             backupInfo: store.backupInfo,
+            enteringRecoveryKey: false,
         };
     }
 
@@ -92,9 +99,31 @@ export default class SetupEncryptionBody extends React.Component<IProps, IState>
         store.stop();
     }
 
-    private onUsePassphraseClick = async (): Promise<void> => {
+    private onUsePassphraseClick = (): void => {
+        // Open the key form in this same card. A second modal is a no-op when
+        // this UI is a static dialog (verify-session toast) or an AuthPage.
+        this.setState({ enteringRecoveryKey: true });
+    };
+
+    private onRecoveryKeyFinished = async (result?: false | KeyParams): Promise<void> => {
+        if (!result) {
+            this.setState({ enteringRecoveryKey: false });
+            return;
+        }
         const store = SetupEncryptionStore.sharedInstance();
-        await store.usePassPhrase();
+        const keyInfo = store.keyInfo;
+        if (!keyInfo) {
+            this.setState({ enteringRecoveryKey: false });
+            return;
+        }
+        try {
+            const key = await makeInputToKey(keyInfo)(result);
+            setForcedSecretStorageKey(key);
+            await store.usePassPhrase();
+        } finally {
+            setForcedSecretStorageKey(null);
+            this.setState({ enteringRecoveryKey: false });
+        }
     };
 
     private onVerifyClick = (): void => {
@@ -169,6 +198,21 @@ export default class SetupEncryptionBody extends React.Component<IProps, IState>
             );
         } else if (phase === Phase.Intro) {
             const store = SetupEncryptionStore.sharedInstance();
+
+            if (this.state.enteringRecoveryKey && store.keyInfo) {
+                const keyInfo = store.keyInfo;
+                return (
+                    <AccessSecretStorageDialog
+                        embed
+                        keyInfo={keyInfo}
+                        checkPrivateKey={async (input: KeyParams): Promise<boolean> => {
+                            const key = await makeInputToKey(keyInfo)(input);
+                            return MatrixClientPeg.safeGet().secretStorage.checkKey(key, keyInfo);
+                        }}
+                        onFinished={this.onRecoveryKeyFinished}
+                    />
+                );
+            }
 
             let verifyButton;
             if (store.hasDevicesToVerifyAgainst) {

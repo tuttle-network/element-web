@@ -40,6 +40,12 @@ interface IProps {
      * the user cancelled.
      */
     onFinished(result?: false | KeyParams): void;
+    /**
+     * Render the form in the parent surface instead of wrapping it in BaseDialog.
+     * Used when "Use recovery key" must replace the verify-session card in place
+     * (a second modal is easy to miss behind a static dialog / AuthPage).
+     */
+    embed?: boolean;
 }
 
 interface IState {
@@ -207,18 +213,26 @@ export default class AccessSecretStorageDialog extends React.PureComponent<IProp
             </div>
         );
 
+        const card = (
+            <EncryptionCard
+                Icon={LockSolidIcon}
+                className="mx_AccessSecretStorageDialog mx_EncryptionCard_noBorder"
+                title={title}
+                description={_t("encryption|access_secret_storage_dialog|privacy_warning")}
+            >
+                {content}
+            </EncryptionCard>
+        );
+
+        if (this.props.embed) {
+            return card;
+        }
+
         // We wrap the content in `BaseDialog` mostly so that we get a `FocusLock` container; otherwise, if the
         // SettingsDialog is open, then the `FocusLock` in *that* stops us getting the focus.
         return (
             <BaseDialog fixedWidth={false} hasCancel={false}>
-                <EncryptionCard
-                    Icon={LockSolidIcon}
-                    className="mx_AccessSecretStorageDialog"
-                    title={title}
-                    description={_t("encryption|access_secret_storage_dialog|privacy_warning")}
-                >
-                    {content}
-                </EncryptionCard>
+                {card}
             </BaseDialog>
         );
     }

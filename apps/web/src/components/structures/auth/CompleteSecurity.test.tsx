@@ -147,4 +147,23 @@ describe("CompleteSecurity", () => {
             screen.getByRole("heading", { name: "Are you sure you want to reset your digital identity?" }),
         ).toBeInTheDocument();
     });
+
+    it("shows the recovery key form in-place when Use recovery key is clicked", async () => {
+        const store = new SetupEncryptionStore();
+        vi.spyOn(store, "fetchKeyInfo").mockImplementation(async () => {
+            store.keyInfo = {} as any;
+            store.phase = Phase.Intro;
+            store.emit("update");
+        });
+        vi.spyOn(SetupEncryptionStore, "sharedInstance").mockReturnValue(store);
+        await act(() => render(<CompleteSecurity onFinished={() => {}} />));
+
+        await act(async () => {
+            screen.getByRole("button", { name: "Use recovery key" }).click();
+        });
+
+        expect(screen.getByRole("heading", { name: "Enter your recovery key" })).toBeInTheDocument();
+        expect(screen.getByPlaceholderText("Recovery key")).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Use recovery key" })).not.toBeInTheDocument();
+    });
 });

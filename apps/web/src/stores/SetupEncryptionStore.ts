@@ -22,6 +22,9 @@ import { MatrixClientPeg } from "../MatrixClientPeg";
 import { AccessCancelledError, accessSecretStorage } from "../SecurityManager";
 import { initialiseDehydrationIfEnabled } from "../utils/device/dehydration";
 import { hasOtherVerifiedDevices } from "../hooks/useHasOtherVerifiedDevices";
+import Modal from "../Modal";
+import ErrorDialog from "../components/views/dialogs/ErrorDialog";
+import { _t } from "../languageHandler";
 
 export enum Phase {
     Loading = 0,
@@ -114,8 +117,8 @@ export class SetupEncryptionStore extends EventEmitter {
 
     public async usePassPhrase(): Promise<void> {
         logger.debug("SetupEncryptionStore.usePassphrase");
-        // Do not switch to Busy before the recovery-key dialog is shown: Busy
-        // unmounts the Intro buttons, so a hidden/failed dialog looks like a no-op.
+        this.phase = Phase.Busy;
+        this.emit("update");
         try {
             const cli = MatrixClientPeg.safeGet();
             const backupInfo = (await cli.getCrypto()?.getKeyBackupInfo()) ?? null;
@@ -157,6 +160,15 @@ export class SetupEncryptionStore extends EventEmitter {
                 logger.debug("SetupEncryptionStore.usePassphrase: user cancelled access to secret storage");
             } else {
                 logger.log("SetupEncryptionStore.usePassphrase: error", e);
+                Modal.createDialog(
+                    ErrorDialog,
+                    {
+                        title: _t("common|error"),
+                        description: e instanceof Error ? e.message : String(e),
+                    },
+                    undefined,
+                    /* isPriorityModal = */ true,
+                );
             }
 
             this.phase = Phase.Intro;
