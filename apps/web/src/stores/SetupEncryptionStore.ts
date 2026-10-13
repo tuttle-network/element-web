@@ -24,7 +24,14 @@ import { initialiseDehydrationIfEnabled } from "../utils/device/dehydration";
 import { hasOtherVerifiedDevices } from "../hooks/useHasOtherVerifiedDevices";
 import Modal from "../Modal";
 import ErrorDialog from "../components/views/dialogs/ErrorDialog";
+import { ResetIdentityDialog } from "../components/views/dialogs/ResetIdentityDialog";
 import { _t } from "../languageHandler";
+
+/** 4S decrypted a cross-signing private key that does not match the public key on the server. */
+function isStaleCrossSigningInSecretStorage(e: unknown): boolean {
+    const msg = e instanceof Error ? e.message : String(e);
+    return /imported private key doesn't match/i.test(msg);
+}
 
 export enum Phase {
     Loading = 0,
@@ -158,6 +165,22 @@ export class SetupEncryptionStore extends EventEmitter {
         } catch (e) {
             if (e instanceof AccessCancelledError) {
                 logger.debug("SetupEncryptionStore.usePassphrase: user cancelled access to secret storage");
+            } else if (isStaleCrossSigningInSecretStorage(e)) {
+                // Recovery key is valid for 4S, but the CS master in 4S is not
+                // the identity currently published on the server. Reset is the
+                // only way forward without another verified device.
+                logger.log("SetupEncryptionStore.usePassphrase: stale cross-signing in 4S", e);
+                Modal.createDialog(
+                    ResetIdentityDialog,
+                    {
+                        onReset: () => {
+                            this.done();
+                        },
+                        variant: "sync_failed",
+                    },
+                    undefined,
+                    /* isPriorityModal = */ true,
+                );
             } else {
                 logger.log("SetupEncryptionStore.usePassphrase: error", e);
                 Modal.createDialog(

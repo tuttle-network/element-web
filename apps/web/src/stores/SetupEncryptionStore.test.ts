@@ -16,9 +16,12 @@ import { emitPromise, stubClient } from "test-utils";
 
 import { accessSecretStorage } from "../SecurityManager";
 import { SetupEncryptionStore } from "./SetupEncryptionStore";
+import Modal from "../Modal";
+import { ResetIdentityDialog } from "../components/views/dialogs/ResetIdentityDialog";
 
 vi.mock("../SecurityManager", () => ({
     accessSecretStorage: vi.fn(),
+    AccessCancelledError: class AccessCancelledError extends Error {},
 }));
 
 describe("SetupEncryptionStore", () => {
@@ -152,6 +155,32 @@ describe("SetupEncryptionStore", () => {
             await setupEncryptionStore.usePassPhrase();
 
             await expect(dehydrationPromise).resolves.toBeUndefined();
+        });
+
+        it("opens identity reset when 4S cross-signing does not match the server", async () => {
+            mockSecretStorage.isStored.mockResolvedValue({ sskeyid: {} as SecretStorageKeyDescriptionAesV1 });
+            mockCrypto.getUserDeviceInfo.mockResolvedValue(new Map());
+            vi.mocked(accessSecretStorage).mockRejectedValue(
+                new Error(
+                    "Error while importing m.cross_signing.master: The public key of the imported private key doesn't match the public key that was uploaded to the server",
+                ),
+            );
+            const createDialog = vi.spyOn(Modal, "createDialog").mockReturnValue({
+                close: vi.fn(),
+                finished: Promise.resolve([]),
+            });
+
+            setupEncryptionStore.start();
+            await emitPromise(setupEncryptionStore, "update");
+            await setupEncryptionStore.usePassPhrase();
+
+            expect(createDialog).toHaveBeenCalledWith(
+                ResetIdentityDialog,
+                expect.objectContaining({ variant: "sync_failed" }),
+                undefined,
+                true,
+            );
+            createDialog.mockRestore();
         });
     });
 });
