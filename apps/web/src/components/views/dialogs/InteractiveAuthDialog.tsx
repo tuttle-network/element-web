@@ -184,6 +184,7 @@ export default class InteractiveAuthDialog<T> extends React.Component<Interactiv
                         onStagePhaseChange={this.onUpdateStagePhase}
                         continueText={continueText}
                         continueKind={continueKind}
+                        poll={true}
                     />
                 </div>
             );

@@ -962,16 +962,12 @@ export class MasUnlockCrossSigningAuthEntry extends FallbackAuthEntry<{
     public static readonly LOGIN_TYPE = AuthType.OAuth;
     public static readonly UNSTABLE_LOGIN_TYPE = CustomAuthType.MasCrossSigningReset;
 
-    private onGoToAccountClick = (): void => {
-        if (!this.props.stageParams?.url) return;
-        this.popupWindow = window.open(this.props.stageParams.url, "_blank");
-    };
-
     private onRetryClick = (): void => {
         this.props.submitAuthDict({ type: MasUnlockCrossSigningAuthEntry.LOGIN_TYPE });
     };
 
     public render(): React.ReactNode {
+        const accountUrl = this.props.stageParams?.url;
         return (
             <EncryptionCard
                 Icon={UserProfileSolidIcon}
@@ -982,8 +978,11 @@ export class MasUnlockCrossSigningAuthEntry extends FallbackAuthEntry<{
             >
                 <EncryptionCardButtons>
                     <Button
+                        as="a"
+                        href={accountUrl || "#"}
+                        target="_blank"
+                        rel="noreferrer noopener"
                         Icon={PopOutIcon}
-                        onClick={this.onGoToAccountClick}
                         autoFocus
                         kind="primary"
                         className="mx_Dialog_nonDialogButton"

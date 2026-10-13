@@ -63,15 +63,20 @@ export async function uiAuthCallback(
             },
         };
 
-        const { finished } = Modal.createDialog(InteractiveAuthDialog, {
-            title: "",
-            matrixClient,
-            makeRequest,
-            aestheticsForStagePhases: {
-                [SSOAuthEntry.LOGIN_TYPE]: dialogAesthetics,
-                [SSOAuthEntry.UNSTABLE_LOGIN_TYPE]: dialogAesthetics,
+        const { finished } = Modal.createDialog(
+            InteractiveAuthDialog,
+            {
+                title: "",
+                matrixClient,
+                makeRequest,
+                aestheticsForStagePhases: {
+                    [SSOAuthEntry.LOGIN_TYPE]: dialogAesthetics,
+                    [SSOAuthEntry.UNSTABLE_LOGIN_TYPE]: dialogAesthetics,
+                },
             },
-        });
+            "mx_Dialog_recoveryKey",
+            /* isPriorityModal = */ true,
+        );
         const [confirmed] = await finished;
         if (!confirmed) {
             throw new Error("Cross-signing key upload auth canceled");
