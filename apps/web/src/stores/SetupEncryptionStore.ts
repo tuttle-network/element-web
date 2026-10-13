@@ -179,7 +179,8 @@ export class SetupEncryptionStore extends EventEmitter {
                         variant: "sync_failed",
                     },
                     undefined,
-                    /* isPriorityModal = */ true,
+                    /* isPriorityModal = */ false,
+                    /* isStaticModal = */ true,
                 );
             } else {
                 logger.log("SetupEncryptionStore.usePassphrase: error", e);

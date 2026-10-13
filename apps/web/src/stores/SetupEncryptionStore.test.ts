@@ -178,6 +178,7 @@ describe("SetupEncryptionStore", () => {
                 ResetIdentityDialog,
                 expect.objectContaining({ variant: "sync_failed" }),
                 undefined,
+                false,
                 true,
             );
             createDialog.mockRestore();
